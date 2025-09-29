@@ -1,0 +1,142 @@
+/*сколько у клиента активных подписок и суммарная активная выручка*/
+SELECT
+  c.client_id,
+  c.first_name,
+  c.last_name,
+  COUNT(s.subscription_id) FILTER (
+    WHERE s.activation_date <= CURRENT_DATE
+      AND s.activation_date + INTERVAL '1 month' > CURRENT_DATE
+  ) AS active_subscriptions,
+  SUM(s.total_price) FILTER (
+    WHERE s.activation_date <= CURRENT_DATE
+      AND s.activation_date + INTERVAL '1 month' > CURRENT_DATE
+  ) AS active_revenue
+FROM public.clients c
+LEFT JOIN public.subscriptions s ON s.client_id = c.client_id
+WHERE c.client_id = '550e8400-e29b-41d4-a716-446655440000'
+GROUP BY c.client_id, c.first_name, c.last_name;
+
+/*cколько раз клиент посетил зал*/
+SELECT 
+    c.client_id,
+    c.first_name || ' ' || c.last_name AS client_name,
+    COUNT(v.visit_id) AS visit_count
+FROM public.clients c
+LEFT JOIN public.subscriptions s ON s.client_id = c.client_id
+LEFT JOIN public.visits v ON v.subscription_id = s.subscription_id
+GROUP BY c.client_id, client_name
+ORDER BY visit_count DESC;
+
+/*получить по каждому продавцу его топ-сделку*/
+SELECT *
+FROM (
+  SELECT
+    t.transaction_id,
+    e.employee_id,
+    e.first_name || ' ' || e.last_name AS seller_name,
+    p.product_id,
+    (t.total_amount - p.base_price) AS profit,
+    ROW_NUMBER() OVER (PARTITION BY e.employee_id ORDER BY (t.total_amount - p.base_price) DESC, t.datatime) AS rn
+  FROM public.transactions t
+  JOIN public.products p   ON t.product_id = p.product_id
+  JOIN public.employees e  ON t.employee_id = e.employee_id
+) x
+WHERE rn = 1
+ORDER BY profit DESC;
+
+/*финансовую эффективность продаж*/
+SELECT 
+    p.product_type,
+    p.category,
+    p.base_price,
+    t.total_amount AS sale_price,
+    (t.total_amount - p.base_price) AS profit,
+    t.payment_type,
+    t.datatime AS sale_date,
+    e.first_name || ' ' || e.last_name AS seller_name
+FROM public.products p
+JOIN public.transactions t ON p.product_id = t.product_id
+JOIN public.employees e ON t.employee_id = e.employee_id
+ORDER BY t.datatime DESC, profit DESC;
+
+/* Топ 3 самых популярных занимаемых zone у групп
+Сколько уникальных групп связано с зоной (group_count),
+Сколько уникальных клиентов связано со всеми этими группами (unique_clients)*/
+WITH zone_stats AS (
+  SELECT 
+    z.zone_id,
+    z.type AS zone_name,
+    COUNT(DISTINCT g.group_id) AS group_count,
+    COUNT(DISTINCT gc.client_id) AS unique_clients
+  FROM public.zones z
+  JOIN public.slots sl ON sl.zone_id = z.zone_id
+  JOIN public.groups g ON g.group_id = sl.group_id
+  LEFT JOIN public.group_clients gc ON gc.group_id = g.group_id
+  GROUP BY z.zone_id, z.type
+)
+SELECT *
+FROM zone_stats
+ORDER BY unique_clients DESC
+LIMIT 3;
+
+/*Какими вещами смогут воспользоваться люди на занятии*/
+SELECT
+  e.equipment_id,
+  e.name                AS equipment_name,
+  e.zone_id,
+  z.type                AS zone_type
+FROM public.slots sl
+JOIN public.zones z       ON sl.zone_id = z.zone_id
+JOIN public.equipments e  ON e.zone_id = z.zone_id
+WHERE sl.slot_id = '22110000-0000-4000-8000-000000000001'
+ORDER BY e.name;
+
+/*самое раннее начало рабочего дня сотрудника*/
+SELECT 
+  e.employee_id,
+  e.first_name || ' ' || e.last_name AS employee_name,
+  MIN(ws.start_time) AS first_start_time -- самое раннее начало
+FROM public.employees e
+JOIN public.work_schedules ws ON e.employee_id = ws.employee_id
+WHERE e.employee_id = '11111111-2222-3333-4444-555555555555'
+GROUP BY e.employee_id, employee_name;
+
+/*список тех, кто сейчас занимает zone
+присваивает порядковый номер клиента внутри этой зоны (seq_in_zone),
+и даёт общее число клиентов в этой зоне (total_in_zone).
+для каждой строки (клиента в зоне) функция возвращает уникальный порядковый номер: 1,2,3*/
+SELECT
+  client_id,
+  first_name,
+  last_name,
+  zone_id,
+  zone_type,
+  ROW_NUMBER() OVER (
+    PARTITION BY zone_id
+    ORDER BY last_name, first_name, client_id
+  ) AS seq_in_zone,
+  COUNT(client_id) OVER (PARTITION BY zone_id) AS total_in_zone
+FROM (
+  SELECT DISTINCT
+    c.client_id,
+    c.first_name,
+    c.last_name,
+    z.zone_id,
+    z.type AS zone_type
+  FROM public.zones z
+  JOIN public.slots sl ON sl.zone_id = z.zone_id
+  JOIN public.groups g ON g.group_id = sl.group_id
+  JOIN public.group_clients gc ON gc.group_id = g.group_id
+  JOIN public.clients c ON c.client_id = gc.client_id
+  WHERE z.type = 'swimming pool'
+    AND current_date BETWEEN sl.start_datatime AND sl.end_datatime
+) t
+ORDER BY zone_id, seq_in_zone;
+
+
+
+
+
+
+
+
