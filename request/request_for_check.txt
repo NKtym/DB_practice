@@ -1,0 +1,184 @@
+psql -h localhost -p 5432 -U postgres -d sports_center
+
+docker compose exec db psql -U postgres -d sports_center -c "SELECT version();"
+
+docker exec -u postgres -it sports_center_db psql -U postgres -d sports_center
+-- в интерактивной сессии:
+-- \dt   (показать таблицы)
+-- <вставьте ваш оконный запрос и нажмите Enter>
+-- \q   (выйти)
+
+
+--2)оконные
+
+--Топ клиентов по сумме покупок + ранг + дата последней транзакции - готово!
+WITH client_totals AS (
+  -- суммарные траты по каждому клиенту
+  SELECT
+    t.client_id,
+    SUM(t.total_amount) AS total_spent
+  FROM transactions t
+  GROUP BY t.client_id
+),
+ranked AS (
+  -- ранг клиентов по суммарным тратам
+  SELECT
+    ct.*,
+    RANK() OVER (ORDER BY ct.total_spent DESC) AS spend_rank
+  FROM client_totals ct
+),
+last_tx AS (
+  -- последняя транзакция для каждого клиента
+  SELECT DISTINCT ON (t.client_id)
+    t.client_id,
+    t.transaction_id,
+    t.datatime              AS last_transaction_date,
+    t.total_amount          AS last_tx_amount
+  FROM transactions t
+  ORDER BY t.client_id, t.datatime DESC, t.transaction_id
+)
+SELECT
+  c.client_id,
+  COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '') AS client_name,
+  COALESCE(r.total_spent, 0) AS total_spent,
+  r.spend_rank,
+  lt.last_transaction_date,
+  lt.last_tx_amount
+FROM clients c
+LEFT JOIN ranked r ON c.client_id = r.client_id
+LEFT JOIN last_tx lt  ON c.client_id = lt.client_id
+ORDER BY r.total_spent DESC NULLS LAST
+LIMIT 100;
+
+--2)  Скользящая средняя суммы транзакций по клиенту (последние 3 транзакции) - готово
+
+SELECT
+  client_id,
+  transaction_id,
+  datatime,
+  total_amount,
+  AVG(total_amount) OVER (
+    PARTITION BY client_id
+    ORDER BY datatime
+    ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+  ) AS avg_last_3_amount
+FROM transactions
+ORDER BY client_id, datatime;
+
+
+
+--3) Использование слотов: доля по зоне, ранжирование слотов в зоне - готово
+
+WITH slot_usage AS (
+  SELECT
+    s.slot_id,
+    s.zone_id,
+    COUNT(v.visit_id) AS bookings_count
+  FROM slots s
+  LEFT JOIN visits v ON s.slot_id = v.slot_id
+  GROUP BY s.slot_id, s.zone_id
+)
+SELECT
+  slot_id,
+  zone_id,
+  bookings_count,
+  SUM(bookings_count) OVER (PARTITION BY zone_id) AS zone_total_bookings,
+  ROUND(100.0 * bookings_count / NULLIF(SUM(bookings_count) OVER (PARTITION BY zone_id),0), 2) AS pct_of_zone,
+  RANK() OVER (PARTITION BY zone_id ORDER BY bookings_count DESC) AS zone_rank
+FROM slot_usage
+ORDER BY zone_id, zone_rank;
+
+--4) Дневная выручка по продуктам + накопительная выручка и разница с предыдущим днём - готово
+
+WITH daily AS (
+  SELECT
+    product_id,
+    date_trunc('day', datatime)::date AS day,
+    COALESCE(SUM(total_amount), 0) AS day_revenue
+  FROM transactions
+  WHERE product_id IS NOT NULL
+  GROUP BY product_id, day
+)
+SELECT
+  product_id,
+  day,
+  day_revenue,
+  SUM(day_revenue) OVER (PARTITION BY product_id ORDER BY day) AS running_revenue,
+  day_revenue - LAG(day_revenue) OVER (PARTITION BY product_id ORDER BY day) AS diff_from_prev_day
+FROM daily
+ORDER BY product_id, day;
+
+
+
+-- агрегирующие запросы
+
+
+--1)Топ‑10 клиентов по суммарным тратам - готово!
+SELECT
+  c.client_id,
+  COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '') AS client_name,
+  SUM(t.total_amount)                      AS total_spent_raw,  -- при необходимости /100.0
+  MAX(t.datatime)                           AS last_transaction_date,
+  COUNT(*)                                  AS tx_count
+FROM transactions t
+JOIN clients c ON c.client_id = t.client_id
+GROUP BY c.client_id, c.first_name, c.last_name
+ORDER BY SUM(t.total_amount) DESC
+LIMIT 10;
+
+--2)Месячная выручка за последние 12 месяцев - готово!
+SELECT
+  date_trunc('month', t.datatime) AS month,
+  SUM(t.total_amount)            AS month_revenue_raw,  -- при необходимости /100.0
+  COUNT(*)                       AS tx_count
+FROM transactions t
+WHERE t.datatime >= (date_trunc('month', current_date) - INTERVAL '11 months')
+GROUP BY date_trunc('month', t.datatime)
+ORDER BY date_trunc('month', t.datatime);
+
+
+--3)Разбивка по способу оплаты — количество и средний чек - готово!
+
+SELECT
+  t.payment_type,
+  COUNT(*)                         AS tx_count,
+  SUM(t.total_amount)              AS total_amount_raw,  -- /100.0 при необходимости
+  AVG(t.total_amount)              AS avg_tx_amount_raw
+FROM transactions t
+GROUP BY t.payment_type
+ORDER BY SUM(t.total_amount) DESC;
+
+
+--4)Топ‑10 товаров по выручке и количеству продаж - готово!
+
+SELECT
+  p.product_id,
+  COALESCE(p.product_type, '<no name>') AS product_name,
+  COUNT(*)                      AS sales_count,
+  SUM(t.total_amount)           AS revenue_raw  -- /100.0 при необходимости
+FROM transactions t
+JOIN products p ON p.product_id = t.product_id
+GROUP BY p.product_id, product_name
+ORDER BY SUM(t.total_amount) DESC
+LIMIT 10;
+
+
+
+--5)Производительность сотрудников — продажи за последние 30 дней - готово!
+
+SELECT
+  e.employee_id,
+  COALESCE(e.first_name, '') || ' ' || COALESCE(e.last_name, '') AS employee_name,
+  COUNT(t.transaction_id)                        AS tx_count,
+  SUM(t.total_amount)                            AS total_sales_raw,  -- /100.0 при необходимости
+  AVG(t.total_amount)                            AS avg_tx_amount_raw
+FROM transactions t
+JOIN employees e ON e.employee_id = t.employee_id
+WHERE t.datatime >= current_date - INTERVAL '30 days'
+GROUP BY e.employee_id, e.first_name, e.last_name
+ORDER BY SUM(t.total_amount) DESC;
+
+
+
+
+
