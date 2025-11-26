@@ -1,0 +1,38 @@
+groups:
+- name: postgres
+  rules:
+  - alert: PostgresDeadlock
+    expr: increase(pg_stat_database_deadlocks{datname="appdb"}[5m]) > 0
+    for: 1m
+    labels: {severity: critical}
+    annotations:
+      summary: "Deadlock detected in appdb"
+
+  - alert: PostgresHighConnections
+    expr: sum(pg_stat_database_numbackends{datname="appdb"}) > 200
+    for: 2m
+    labels: {severity: warning}
+    annotations:
+      summary: "Too many connections to appdb"
+
+  - alert: PostgresLongTransaction
+    expr: max_over_time(pg_stat_activity_max_tx_duration{datname="appdb"}[5m]) > 300
+    for: 1m
+    labels: {severity: critical}
+    annotations:
+      summary: "Long running transaction (>5min) in appdb"
+
+- name: node
+  rules:
+  - alert: HighCPU
+    expr: 100 * (1 - avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 85
+    for: 2m
+    labels: {severity: warning}
+  - alert: HighMemoryUsage
+    expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 90
+    for: 2m
+    labels: {severity: critical}
+  - alert: HighDiskUsage
+    expr: (node_filesystem_size_bytes{fstype!~"tmpfs|squashfs"} - node_filesystem_avail_bytes{fstype!~"tmpfs|squashfs"}) / node_filesystem_size_bytes{fstype!~"tmpfs|squashfs"} > 0.9
+    for: 1m
+    labels: {severity: critical}
