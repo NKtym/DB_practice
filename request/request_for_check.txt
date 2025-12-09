@@ -1,17 +1,6 @@
-psql -h localhost -p 5432 -U postgres -d sports_center
-
-docker compose exec db psql -U postgres -d sports_center -c "SELECT version();"
-
-docker exec -u postgres -it sports_center_db psql -U postgres -d sports_center
--- в интерактивной сессии:
--- \dt   (показать таблицы)
--- <вставьте ваш оконный запрос и нажмите Enter>
--- \q   (выйти)
-
-
 --2)оконные
 
---Топ клиентов по сумме покупок + ранг + дата последней транзакции - готово!
+--Топ клиентов по сумме покупок + ранг + дата последней транзакции - готово! (хороший запрос)
 WITH client_totals AS (
   -- суммарные траты по каждому клиенту
   SELECT
@@ -67,7 +56,7 @@ ORDER BY client_id, datatime;
 
 
 
---3) Использование слотов: доля по зоне, ранжирование слотов в зоне - готово
+--3) Использование слотов: доля по зоне, ранжирование слотов в зоне - готово (хороший запрос)
 
 WITH slot_usage AS (
   SELECT
@@ -88,9 +77,32 @@ SELECT
 FROM slot_usage
 ORDER BY zone_id, zone_rank;
 
---4) Дневная выручка по продуктам + накопительная выручка и разница с предыдущим днём - готово
+--4) Дневная выручка по продуктам + накопительная выручка и разница с предыдущим днём - готово !!!!!!!!!!!!!!!!
 
-WITH daily AS (
+WITH calendar AS (
+  -- Создаем календарь всех дней за период
+  SELECT generate_series(
+    MIN(date_trunc('day', datatime))::date,
+    MAX(date_trunc('day', datatime))::date,
+    '1 day'::interval
+  )::date AS day
+  FROM transactions
+  WHERE product_id IS NOT NULL
+),
+all_products AS (
+  -- Все продукты, которые когда-либо продавались
+  SELECT DISTINCT product_id
+  FROM transactions
+  WHERE product_id IS NOT NULL
+),
+product_calendar AS (
+  -- Декартово произведение: все дни × все продукты
+  SELECT p.product_id, c.day
+  FROM all_products p
+  CROSS JOIN calendar c
+),
+daily AS (
+  -- Фактические продажи по дням
   SELECT
     product_id,
     date_trunc('day', datatime)::date AS day,
@@ -100,13 +112,21 @@ WITH daily AS (
   GROUP BY product_id, day
 )
 SELECT
-  product_id,
-  day,
-  day_revenue,
-  SUM(day_revenue) OVER (PARTITION BY product_id ORDER BY day) AS running_revenue,
-  day_revenue - LAG(day_revenue) OVER (PARTITION BY product_id ORDER BY day) AS diff_from_prev_day
-FROM daily
-ORDER BY product_id, day;
+  pc.product_id,
+  pc.day,
+  COALESCE(d.day_revenue, 0) AS day_revenue,
+  SUM(COALESCE(d.day_revenue, 0)) OVER (
+    PARTITION BY pc.product_id 
+    ORDER BY pc.day
+  ) AS running_revenue,
+  COALESCE(d.day_revenue, 0) - 
+  COALESCE(LAG(COALESCE(d.day_revenue, 0)) OVER (
+    PARTITION BY pc.product_id 
+    ORDER BY pc.day
+  ), 0) AS diff_from_prev_day
+FROM product_calendar pc
+LEFT JOIN daily d ON pc.product_id = d.product_id AND pc.day = d.day
+ORDER BY pc.product_id, pc.day;
 
 
 
@@ -164,19 +184,27 @@ LIMIT 10;
 
 
 
---5)Производительность сотрудников — продажи за последние 30 дней - готово!
-
+--5)ТОП-10 сотрудников по выручке за последние 365 дней
 SELECT
   e.employee_id,
   COALESCE(e.first_name, '') || ' ' || COALESCE(e.last_name, '') AS employee_name,
-  COUNT(t.transaction_id)                        AS tx_count,
-  SUM(t.total_amount)                            AS total_sales_raw,  -- /100.0 при необходимости
-  AVG(t.total_amount)                            AS avg_tx_amount_raw
+  COUNT(t.transaction_id) AS tx_count,
+  SUM(t.total_amount) AS total_sales,
+  ROUND(AVG(t.total_amount), 2) AS avg_check,
+  ROUND(SUM(t.total_amount) / 100.0, 2) AS total_sales_rub,  -- если в копейках
+  -- Ранжирование
+  RANK() OVER (ORDER BY SUM(t.total_amount) DESC) AS rank_by_revenue,
+  DENSE_RANK() OVER (ORDER BY SUM(t.total_amount) DESC) AS dense_rank,
+  -- Доля от общей выручки
+  ROUND(100.0 * SUM(t.total_amount) / SUM(SUM(t.total_amount)) OVER (), 2) AS percent_of_total,
+  -- Последняя активность
+  MAX(t.datatime) AS last_transaction_date
 FROM transactions t
 JOIN employees e ON e.employee_id = t.employee_id
-WHERE t.datatime >= current_date - INTERVAL '30 days'
+WHERE t.datatime >= CURRENT_DATE - INTERVAL '365 days'
 GROUP BY e.employee_id, e.first_name, e.last_name
-ORDER BY SUM(t.total_amount) DESC;
+ORDER BY total_sales DESC
+LIMIT 10;
 
 
 
