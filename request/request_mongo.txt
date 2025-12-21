@@ -1,0 +1,58 @@
+Детали занятия по slot_id (GET /classes/:slot_id)
+db.class_attendance.findOne({ slot_id: slotId }, { _id: 0 }) - Для примера можно взять "550e8400-e29b-41d4-a716-446655440001"
+
+Получить статистику конкретного тренера за период (GET /trainers/:trainer_id/statistics?period=2025-09)
+db.trainer_statistics.findOne({ trainer_id: trainerId, period: period }, { _id: 0 }) - "550e8400-e29b-41d4-a716-446655440010", "2025-09"
+
+Список запланированных (PLANNED) будущих занятий (GET /classes/upcoming?from=ISODate("2025-09-23T00:00:00Z"))
+db.class_attendance.find(
+  { date: { $gte: ISODate("") }, status: "PLANNED" },
+  { _id:0 }
+)
+.sort({ date:1, start_time:1 }) - ISODate("2025-09-23T00:00:00Z")
+
+Часовая загрузка для зоны в дату (GET /zones/:zone_id/hourly?date=ISODate("2025-09-23T00:00:00Z"))
+db.daily_zone_occupancy.aggregate([
+  { $match: { zone_id: zoneId, date: dateISO } },
+  { $project: { _id:0, zone_id:1, zone_name:1, hourly_occupancy:1 } }
+]) - "550e8400-e29b-41d4-a716-446655440020", ISODate("2025-09-23T00:00:00Z")
+
+Топ зон по средней заполняемости за период (GET /zones/peak?from=2025-09-01&to=2025-09-30&limit=10)
+db.daily_zone_occupancy.aggregate([
+  { $match: { date: { $gte: fromISO, $lte: toISO } } },
+  { $group: {
+      _id: { zone_id: "$zone_id", zone_name: "$zone_name" },
+      avgOccupancy: { $avg: "$occupancy_rate" },
+      totalVisits: { $sum: "$total_visits" }
+  }},
+  { $sort: { avgOccupancy: -1 } },
+  { $limit: limit },
+  { $project: { _id:0, zone_id:"$_id.zone_id", zone_name:"$_id.zone_name", avgOccupancy:1, totalVisits:1 } }
+]) - ISODate("2025-09-23T00:00:00Z"), ISODate("2025-09-23T00:00:00Z"), 5(если топ 5)
+
+
+Топ по рейтингу (GET /trainers/top/by-rating?limit=10&offset=0)
+const limit  = Math.min(parseInt(process.env.LIMIT || "2", 10), 100);
+const offset = Math.max(parseInt(process.env.OFFSET || "0", 10), 0);
+
+db.trainer_statistics.find(
+  {}, 
+  { _id: 0, trainer_id: 1, trainer_name: 1, rating: 1, total_attendance: 1 }
+)
+.sort({ rating: -1 })
+.skip(offset)
+.limit(limit)
+.toArray()
+
+Топ по общей посещаемости (GET /trainers/top/by-attendance?limit=10&offset=0)
+const limit  = Math.min(parseInt(process.env.LIMIT || "2", 10), 100);
+const offset = Math.max(parseInt(process.env.OFFSET || "0", 10), 0);
+
+db.trainer_statistics.find(
+  {}, 
+  { _id: 0, trainer_id: 1, trainer_name: 1, rating: 1, total_attendance: 1 }
+)
+.sort({ total_attendance: -1 })
+.skip(offset)
+.limit(limit)
+.toArray()
