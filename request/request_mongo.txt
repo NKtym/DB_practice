@@ -1,3 +1,6 @@
+Перед проверкой use sports_center
+
+
 Детали занятия по slot_id (GET /classes/:slot_id)
 db.class_attendance.findOne({ slot_id: slotId }, { _id: 0 }) - Для примера можно взять "550e8400-e29b-41d4-a716-446655440001"
 

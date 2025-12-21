@@ -130,28 +130,33 @@ services:
   mongo:
     image: mongo:6
     container_name: mongo
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     ports:
       - "27017:27017"
-    env_file:
-      - .env
     volumes:
       - mongo_data:/data/db
       - ./mongodb-init:/docker-entrypoint-initdb.d:ro
     restart: unless-stopped
-
-  mongo-express:
-    image: mongo-express:1.0.2
-    container_name: mongo-express
-    environment:
-      ME_CONFIG_MONGODB_SERVER: mongo
-      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME}
-      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+  
+  mongo2:
+    image: mongo:6
+    container_name: mongo2
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     ports:
-      - "8082:8081"
-    depends_on:
-      - mongo
+      - "27018:27017"
+    volumes:
+      - mongo2_data:/data/db
     restart: unless-stopped
 
+  mongo3:
+    image: mongo:6
+    container_name: mongo3
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27019:27017"
+    volumes:
+      - mongo3_data:/data/db
+    restart: unless-stopped
 
 
 volumes:
@@ -163,3 +168,5 @@ volumes:
     name: bdprod_redis_data
   mongo_data:
     name: bdprod_mongo_data
+  mongo2_data:
+  mongo3_data:
