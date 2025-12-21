@@ -1,0 +1,5 @@
+Проверка отдельных клиентов
+HGETALL client:profile:000002fa-f3e6-49a3-9bff-e0b447c71051 - после profile: id  интересующего пользователя (docker exec -it redis redis-cli)
+
+Проверка топ‑10 клиентов
+LRANGE top_clients_list 0 9
