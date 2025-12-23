@@ -36,3 +36,26 @@ groups:
     expr: (node_filesystem_size_bytes{fstype!~"tmpfs|squashfs"} - node_filesystem_avail_bytes{fstype!~"tmpfs|squashfs"}) / node_filesystem_size_bytes{fstype!~"tmpfs|squashfs"} > 0.9
     for: 1m
     labels: {severity: critical}
+
+- name: mongo
+  rules:
+  - alert: MongoDown
+    expr: mongodb_up == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "MongoDB is down"
+
+  - alert: MongoHighConnections
+    expr: mongodb_connections{state="current"} > 500
+    for: 2m
+    labels:
+      severity: warning
+
+  - alert: MongoLowCacheHit
+    expr: (rate(mongodb_ss_wt_cache_pages_requested_from_the_cache[5m])-rate(mongodb_ss_wt_cache_pages_read_into_cache[5m]))/rate(mongodb_ss_wt_cache_pages_requested_from_the_cache[5m])* 100 < 0.8
+    for: 2m
+    labels:
+      severity: warning
+

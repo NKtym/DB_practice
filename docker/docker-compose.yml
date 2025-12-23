@@ -65,7 +65,7 @@ services:
     restart: unless-stopped
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.44.0
+    image: ghcr.io/google/cadvisor:v0.53.0
     container_name: cadvisor
     privileged: true
     pid: "host"
@@ -157,6 +157,19 @@ services:
     volumes:
       - mongo3_data:/data/db
     restart: unless-stopped
+
+  mongo-exporter:
+    image: percona/mongodb_exporter:0.40.0
+    container_name: mongo-exporter
+    command:
+      - "--mongodb.uri=mongodb://mongo:27017"
+      - "--collect-all"
+    ports:
+      - "9216:9216"
+    depends_on:
+      - mongo
+    restart: unless-stopped
+
 
 
 volumes:

@@ -1,0 +1,97 @@
+{
+  "id": null,
+  "uid": "basic-mongo",
+  "title": "MongoDB Monitoring",
+  "tags": ["monitoring", "mongo"],
+  "timezone": "browser",
+  "schemaVersion": 30,
+  "version": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Mongo Ops/sec",
+      "gridPos": {"x":0,"y":0,"w":12,"h":10},
+      "id": 1,
+      "targets": [
+        {
+          "expr": "sum by (rs_nm) (increase(mongodb_ss_opcounters[1m])) / 60",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Active connections",
+      "gridPos": {"x":12,"y":0,"w":6,"h":4},
+      "id": 2,
+      "targets": [
+        {
+          "expr": "sum by (instance) (mongodb_ss_connections{conn_type=\"active\"})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Cache hit %",
+      "gridPos": {"x":0,"y":6,"w":12,"h":6},
+      "id": 3,
+      "targets": [
+        {
+          "expr": "(rate(mongodb_ss_wt_cache_pages_requested_from_the_cache[5m])-rate(mongodb_ss_wt_cache_pages_read_into_cache[5m]))/rate(mongodb_ss_wt_cache_pages_requested_from_the_cache[5m])* 100",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Global lock queue",
+      "gridPos": {"x":0,"y":10,"w":8,"h":10},
+      "id": 5,
+      "targets": [
+        {
+          "expr": "rate(mongodb_ss_wt_lock_txn_global_lock_application_thread_time_waiting_usecs[5m])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Container CPU usage",
+      "gridPos": {"x":12,"y":10,"w":10,"h":12},
+      "id": 6,
+      "targets": [
+        {
+          "expr": "sum by(name) (rate(container_cpu_usage_seconds_total{name=~\"(?i).*mongo.*\"}[5m]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Container memory usage",
+      "gridPos": {"x":0,"y":20,"w":12,"h":16},
+      "id": 7,
+      "targets": [
+        {
+          "expr": "container_memory_usage_bytes{name=~\"(?i).*mongo.*\"}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Replica role",
+      "gridPos": {"x":10,"y":12,"w":10,"h":8},
+      "id": 8,
+      "targets": [
+        {
+          "expr": "mongodb_rs_members_state",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "time": { "from": "now-24h", "to": "now" },
+  "refresh": "30s"
+}

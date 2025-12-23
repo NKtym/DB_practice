@@ -22,3 +22,10 @@ scrape_configs:
     static_configs:
       - targets: ["cadvisor:8080"]
 
+  - job_name: "mongo-exporter"
+    static_configs:
+      - targets: ["mongo-exporter:9216"]
+
+  
+  
+
