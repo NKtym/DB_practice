@@ -170,6 +170,19 @@ services:
       - mongo
     restart: unless-stopped
 
+  mongo-backup:
+    image: mongo:6
+    container_name: mongo-backup
+    depends_on:
+      - mongo2
+    volumes:
+      - mongo_backups:/backup
+    entrypoint: >
+      sh -c "
+      echo 'Starting FULL MongoDB backup with oplog...' &&
+      mongodump --uri='mongodb://mongo2:27017/?replicaSet=rs0' --oplog --out=/backup/$(date +%Y-%m-%d_%H-%M-%S) &&
+      echo 'Backup finished'
+      "
 
 
 volumes:
@@ -183,3 +196,4 @@ volumes:
     name: bdprod_mongo_data
   mongo2_data:
   mongo3_data:
+  mongo_backups:
