@@ -1,0 +1,222 @@
+{
+  "id": null,
+  "uid": "basic-neo4j",
+  "title": "Neo4j monitoring",
+  "tags": ["neo4j","monitoring"],
+  "timezone": "browser",
+  "schemaVersion": 30,
+  "version": 1,
+  "refresh": "30s",
+
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "instance",
+        "label": "Instance (neo4j job)",
+        "query": "label_values(up{job=\"neo4j\"}, instance)",
+        "datasource": null,
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true
+      }
+    ]
+  },
+
+  "panels": [
+
+    {
+      "type": "timeseries",
+      "title": "Container network — bytes recv/send",
+      "gridPos": {"x":0,"y":0,"w":12,"h":8},
+      "id": 1,
+      "targets": [
+        {
+          "expr": "sum by(name) (rate(container_network_receive_bytes_total{name=~\"(?i).*neo4j.*\"}[5m]))",
+          "legendFormat": "{{name}} recv B/s",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by(name) (rate(container_network_transmit_bytes_total{name=~\"(?i).*neo4j.*\"}[5m]))",
+          "legendFormat": "{{name}} send B/s",
+          "refId": "B"
+        }
+      ]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Container memory: working set / usage",
+      "gridPos": {"x":0,"y":6,"w":12,"h":12},
+      "id": 3,
+      "targets": [
+        {
+          "expr": "container_memory_working_set_bytes{name=~\"(?i).*neo4j.*\"}",
+          "legendFormat": "working_set {{name}}",
+          "refId": "A"
+        },
+        {
+          "expr": "container_memory_usage_bytes{name=~\"(?i).*neo4j.*\"}",
+          "legendFormat": "usage {{name}}",
+          "refId": "B"
+        }
+      ]
+    },
+
+    {
+      "type": "stat",
+      "title": "Container memory utilization %",
+      "gridPos": {"x":12,"y":6,"w":12,"h":4},
+      "id": 4,
+      "targets": [
+        {
+          "expr": "clamp_max(100 * container_memory_working_set_bytes{name=~\"(?i).*neo4j.*\"} / clamp_min(container_spec_memory_limit_bytes{name=~\"(?i).*neo4j.*\"}, 1), 100)",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Container Disk I/O — reads/writes",
+      "gridPos": {"x":0,"y":14,"w":12,"h":12},
+      "id": 6,
+      "targets": [
+        {
+          "expr": "sum by(name) (rate(container_fs_reads_bytes_total{name=~\"(?i).*neo4j.*\"}[5m]))",
+          "legendFormat": "{{name}} reads B/s",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by(name) (rate(container_fs_writes_bytes_total{name=~\"(?i).*neo4j.*\"}[5m]))",
+          "legendFormat": "{{name}} writes B/s",
+          "refId": "B"
+        },
+        {
+          "expr": "100 * sum by(name) (rate(container_fs_io_time_seconds_total{name=~\"(?i).*neo4j.*\"}[5m]))",
+          "legendFormat": "{{name}} io util %",
+          "refId": "C"
+        }
+      ]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Page cache hit ratio (%)",
+      "gridPos": {"x":12,"y":16,"w":12,"h":8},
+      "id": 7,
+      "targets": [
+        {
+          "expr": "neo4j_dbms_page_cache_hit_ratio{job=\"neo4j\"} * 100",
+          "legendFormat": "{{instance}} page cache hit %",
+          "refId": "A"
+        },
+        {
+          "expr": "neo4j_dbms_page_cache_usage_ratio{job=\"neo4j\"} * 100",
+          "legendFormat": "{{instance}} page cache usage %",
+          "refId": "B"
+        }
+      ]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Transactions: committed/rollbacks",
+      "gridPos": {"x":0,"y":20,"w":12,"h":10},
+      "id": 8,
+      "targets": [
+        {
+          "expr": "sum(increase(neo4j_database_neo4j_transaction_committed_total{job=\"neo4j\"}[1m])) / 60",
+          "legendFormat": "committed/sec",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(increase(neo4j_database_neo4j_transaction_rollbacks_total{job=\"neo4j\"}[1m])) / 60",
+          "legendFormat": "rollbacks/sec",
+          "refId": "B"
+        }
+      ]
+    },
+
+    {
+      "type": "stat",
+      "title": "Deadlock rollbacks",
+      "gridPos": {"x":12,"y":22,"w":6,"h":4},
+      "id": 9,
+      "targets": [
+        {
+          "expr": "sum(increase(neo4j_database_neo4j_transaction_rollbacks_total{job=\"neo4j\"}[1m]))",
+          "refId": "A"
+        }
+      ],
+      "description": "Используется neo4j_database_neo4j_transaction_rollbacks_total{job=\"neo4j\"}. Для точного детекта deadlock включайте JMX или парсите логи."
+    },
+
+    {
+      "type": "timeseries",
+      "title": "GC time rate & pause time rate",
+      "gridPos": {"x":12,"y":16,"w":12,"h":10},
+      "id": 10,
+      "targets": [
+        {
+          "expr": "(sum by(instance) (rate(neo4j_dbms_vm_gc_time_g1_young_generation_total{job=\"neo4j\"}[5m])) + sum by(instance) (rate(neo4j_dbms_vm_gc_time_g1_old_generation_total{job=\"neo4j\"}[5m])) + sum by(instance) (rate(neo4j_dbms_vm_gc_time_g1_concurrent_gc_total{job=\"neo4j\"}[5m])))",
+          "legendFormat": "gc_time_ms_per_s {{instance}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by(instance) (rate(neo4j_dbms_vm_pause_time_total{job=\"neo4j\"}[5m]))",
+          "legendFormat": "pause_time_ms_per_s {{instance}}",
+          "refId": "B"
+        }
+      ]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Container memory usage",
+      "gridPos": {"x":0,"y":36,"w":12,"h":10},
+      "id": 14,
+      "targets": [
+        {
+          "expr": "container_memory_usage_bytes{name=~\"(?i).*neo4j.*\"}",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    
+    {
+      "type": "timeseries",
+      "title": "Lock pressure — active txs & bolt queue",
+      "gridPos": {"x":12,"y":10,"w":12,"h":8},
+      "id": 5,
+      "targets": [
+        {
+          "expr": "sum(neo4j_database_neo4j_transaction_active_write{job=\"neo4j\"}) by (instance) + sum(neo4j_database_neo4j_transaction_active_read{job=\"neo4j\"}) by (instance)",
+          "legendFormat": "active txs {{instance}}",
+          "refId": "A"
+        },
+        {
+          "expr": "(sum by(instance) (rate(neo4j_dbms_bolt_messages_received_total{job=\"neo4j\"}[5m])) - sum by(instance) (rate(neo4j_dbms_bolt_messages_started_total{job=\"neo4j\"}[5m])))",
+          "legendFormat": "bolt net msgs/sec {{instance}}",
+          "refId": "B"
+        }
+      ]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Container CPU usage",
+      "gridPos": {"x":12,"y":0,"w":12,"h":10},
+      "id": 2,
+      "targets": [
+        {
+          "expr": "sum by(name) (rate(container_cpu_usage_seconds_total{name=~\"(?i).*neo4j.*\"}[5m]))",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ]
+    }
+
+  ]
+}

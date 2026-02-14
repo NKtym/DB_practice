@@ -1,7 +1,7 @@
 {
   "id": null,
   "uid": "basic-mongo",
-  "title": "MongoDB Monitoring",
+  "title": "MongoDB monitoring",
   "tags": ["monitoring", "mongo"],
   "timezone": "browser",
   "schemaVersion": 30,

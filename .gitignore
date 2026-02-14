@@ -1,2 +1,4 @@
 *.env
 generate
+./docker/pack
+./docker/export_volumes.sh

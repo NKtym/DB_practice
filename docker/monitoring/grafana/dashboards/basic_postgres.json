@@ -1,8 +1,8 @@
 {
   "id": null,
   "uid": "basic-postgres",
-  "title": "Monitoring",
-  "tags": ["monitoring"],
+  "title": "PG monitoring",
+  "tags": ["postgres","monitoring"],
   "timezone": "browser",
   "schemaVersion": 30,
   "version": 2,

@@ -1,10 +1,13 @@
+// pg_to_neo4j.go
 package main
 
 import (
 	"context"
+	"database/sql"
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -14,10 +17,9 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
-// ----------------- DEFAULTS -----------------
 const (
 	defaultPGHost  = "localhost"
-	defaultPGPort  = 5433 // учтите, что на хосте у вас проброшен 5433:5432
+	defaultPGPort  = 5433
 	defaultPGUser  = "appuser"
 	defaultPGPass  = "secretpassword"
 	defaultPGDB    = "appdb"
@@ -27,22 +29,25 @@ const (
 	defaultBatch   = 1000
 )
 
-// Структуры для данных (UUIDs храним как строки)
 type Client struct {
-	ID        string
-	FirstName string
-	LastName  string
+	ID               string
+	FirstName        string
+	LastName         string
+	RegistrationDate time.Time
+	CardStatus       string
+	Preference       string
 }
 
 type Product struct {
-	ID       string
-	Category string
+	ID          string
+	BasePrice   float64
+	ProductType string
 }
 
 type Transaction struct {
 	ClientID  string
 	ProductID string
-	Datetime  time.Time
+	// timestamp removed per request
 }
 
 type Group struct {
@@ -56,20 +61,28 @@ type GroupClient struct {
 	ClientID string
 }
 
+// Neo-side structs
 type NeoClient struct {
-	ID   string
-	Name string
+	ID               string
+	Name             string
+	FirstName        string
+	LastName         string
+	RegistrationDate string // store as ISO string
+	CardStatus       string
+	Preference       string
 }
 
 type NeoProduct struct {
-	ID       string
-	Category string
+	ID          string
+	Category    string
+	BasePrice   float64
+	ProductType string
 }
 
 type NeoInteraction struct {
-	UID string
-	PID string
-	TS  int64
+	UID   string
+	PID   string
+	Price float64
 }
 
 type NeoGroup struct {
@@ -78,32 +91,26 @@ type NeoGroup struct {
 }
 
 func main() {
-	// Парсинг аргументов командной строки с учетом переменных окружения
+	rand.Seed(time.Now().UnixNano())
+
 	pgHost := getEnv("PG_HOST", defaultPGHost)
 	pgPort := getEnvAsInt("PG_PORT", defaultPGPort)
 	pgUser := getEnv("PG_USER", defaultPGUser)
 	pgPass := getEnv("PG_PASS", defaultPGPass)
 	pgDB := getEnv("PG_DB", defaultPGDB)
-
 	neoURI := getEnv("NEO_URI", defaultNeoURI)
 	neoUser := getEnv("NEO_USER", defaultNeoUser)
 	neoPass := getEnv("NEO_PASS", defaultNeoPass)
-
 	batchSize := getEnvAsInt("BATCH_SIZE", defaultBatch)
-
-	// Флаги командной строки (имеют приоритет над переменными окружения)
 	flag.StringVar(&pgHost, "pg-host", pgHost, "PostgreSQL host")
 	flag.IntVar(&pgPort, "pg-port", pgPort, "PostgreSQL port")
 	flag.StringVar(&pgUser, "pg-user", pgUser, "PostgreSQL username")
 	flag.StringVar(&pgPass, "pg-pass", pgPass, "PostgreSQL password")
 	flag.StringVar(&pgDB, "pg-db", pgDB, "PostgreSQL database name")
-
 	flag.StringVar(&neoURI, "neo-uri", neoURI, "Neo4j URI")
 	flag.StringVar(&neoUser, "neo-user", neoUser, "Neo4j username")
 	flag.StringVar(&neoPass, "neo-pass", neoPass, "Neo4j password")
-
 	flag.IntVar(&batchSize, "batch", batchSize, "Batch size for Neo4j operations")
-
 	flag.Parse()
 
 	fmt.Println("=== Загрузка данных из PostgreSQL в Neo4j ===")
@@ -191,7 +198,7 @@ func main() {
 	fmt.Println("\nПодготавливаем данные...")
 	neoClients := prepareClients(clients)
 	neoProducts := prepareProducts(products)
-	neoInteractions := prepareInteractions(transactions)
+	neoInteractions := prepareInteractions(transactions, neoProducts)
 	neoGroups := prepareGroups(groups)
 	groupMembershipRows := prepareGroupMemberships(gcs)
 
@@ -256,7 +263,7 @@ func getEnvAsInt(key string, defaultValue int) int {
 // Функции для работы с PostgreSQL
 func fetchClients(conn *pgx.Conn) ([]Client, error) {
 	rows, err := conn.Query(context.Background(),
-		"SELECT client_id::text, first_name, last_name FROM public.clients LIMIT 50")
+		`SELECT client_id::text, first_name, last_name, registration_date, card_status, preference FROM public.clients LIMIT 50`)
 	if err != nil {
 		return nil, err
 	}
@@ -265,8 +272,14 @@ func fetchClients(conn *pgx.Conn) ([]Client, error) {
 	var clients []Client
 	for rows.Next() {
 		var c Client
-		if err := rows.Scan(&c.ID, &c.FirstName, &c.LastName); err != nil {
+		var regDate sql.NullTime
+		if err := rows.Scan(&c.ID, &c.FirstName, &c.LastName, &regDate, &c.CardStatus, &c.Preference); err != nil {
 			return nil, err
+		}
+		if regDate.Valid {
+			c.RegistrationDate = regDate.Time
+		} else {
+			c.RegistrationDate = time.Time{}
 		}
 		clients = append(clients, c)
 	}
@@ -275,7 +288,7 @@ func fetchClients(conn *pgx.Conn) ([]Client, error) {
 
 func fetchProducts(conn *pgx.Conn) ([]Product, error) {
 	rows, err := conn.Query(context.Background(),
-		"SELECT product_id::text, category FROM public.products LIMIT 50")
+		"SELECT product_id::text, base_price, product_type FROM public.products LIMIT 50")
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +297,7 @@ func fetchProducts(conn *pgx.Conn) ([]Product, error) {
 	var products []Product
 	for rows.Next() {
 		var p Product
-		if err := rows.Scan(&p.ID, &p.Category); err != nil {
+		if err := rows.Scan(&p.ID, &p.BasePrice, &p.ProductType); err != nil {
 			return nil, err
 		}
 		products = append(products, p)
@@ -294,7 +307,7 @@ func fetchProducts(conn *pgx.Conn) ([]Product, error) {
 
 func fetchTransactions(conn *pgx.Conn) ([]Transaction, error) {
 	rows, err := conn.Query(context.Background(),
-		"SELECT client_id::text, product_id::text, datatime FROM public.transactions LIMIT 50")
+		"SELECT client_id::text, product_id::text FROM public.transactions LIMIT 50")
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +316,7 @@ func fetchTransactions(conn *pgx.Conn) ([]Transaction, error) {
 	var transactions []Transaction
 	for rows.Next() {
 		var t Transaction
-		if err := rows.Scan(&t.ClientID, &t.ProductID, &t.Datetime); err != nil {
+		if err := rows.Scan(&t.ClientID, &t.ProductID); err != nil {
 			return nil, err
 		}
 		transactions = append(transactions, t)
@@ -390,9 +403,19 @@ func createConstraints(session neo4j.Session) error {
 func prepareClients(clients []Client) []NeoClient {
 	neoClients := make([]NeoClient, 0, len(clients))
 	for _, client := range clients {
+		name := strings.TrimSpace(client.FirstName + " " + client.LastName)
+		regStr := ""
+		if !client.RegistrationDate.IsZero() {
+			regStr = client.RegistrationDate.Format(time.RFC3339)
+		}
 		neoClients = append(neoClients, NeoClient{
-			ID:   client.ID,
-			Name: strings.TrimSpace(client.FirstName + " " + client.LastName),
+			ID:               client.ID,
+			Name:             name,
+			FirstName:        client.FirstName,
+			LastName:         client.LastName,
+			RegistrationDate: regStr,
+			CardStatus:       client.CardStatus,
+			Preference:       client.Preference,
 		})
 	}
 	return neoClients
@@ -401,25 +424,43 @@ func prepareClients(clients []Client) []NeoClient {
 func prepareProducts(products []Product) []NeoProduct {
 	neoProducts := make([]NeoProduct, 0, len(products))
 	for _, product := range products {
-		category := product.Category
-		if category == "" {
-			category = ""
+		category := ""
+		if product.ProductType != "" {
+			category = product.ProductType
 		}
 		neoProducts = append(neoProducts, NeoProduct{
-			ID:       product.ID,
-			Category: category,
+			ID:          product.ID,
+			Category:    category,
+			BasePrice:   product.BasePrice,
+			ProductType: product.ProductType,
 		})
 	}
 	return neoProducts
 }
 
-func prepareInteractions(transactions []Transaction) []NeoInteraction {
+func prepareInteractions(transactions []Transaction, products []NeoProduct) []NeoInteraction {
+	// map productID -> basePrice for price generation
+	priceMap := make(map[string]float64, len(products))
+	for _, p := range products {
+		priceMap[p.ID] = p.BasePrice
+	}
+
 	neoInteractions := make([]NeoInteraction, 0, len(transactions))
 	for _, tx := range transactions {
+		base := priceMap[tx.ProductID]
+		var price float64
+		if base > 0 {
+			// generate price around base: +/-20%
+			factor := 0.8 + rand.Float64()*0.4
+			price = mathRound(base*factor, 2)
+		} else {
+			// fallback random price between 1 and 100
+			price = mathRound(1.0+rand.Float64()*99.0, 2)
+		}
 		neoInteractions = append(neoInteractions, NeoInteraction{
-			UID: tx.ClientID,
-			PID: tx.ProductID,
-			TS:  toTimestampMillis(tx.Datetime),
+			UID:   tx.ClientID,
+			PID:   tx.ProductID,
+			Price: price,
 		})
 	}
 	return neoInteractions
@@ -458,13 +499,26 @@ func writeUsers(session neo4j.Session, clients []NeoClient, batchSize int) error
 		// конвертируем в []map[string]any
 		rows := make([]map[string]any, 0, len(batch))
 		for _, c := range batch {
-			rows = append(rows, map[string]any{"id": c.ID, "name": c.Name})
+			rows = append(rows, map[string]any{
+				"id":                c.ID,
+				"name":              c.Name,
+				"first_name":        c.FirstName,
+				"last_name":         c.LastName,
+				"registration_date": c.RegistrationDate,
+				"card_status":       c.CardStatus,
+				"preference":        c.Preference,
+			})
 		}
 
 		res, err := session.Run(`
     UNWIND $rows AS r
     MERGE (u:User {id: r.id})
-    SET u.name = coalesce(u.name, r.name)
+    SET u.name = coalesce(u.name, r.name),
+        u.first_name = coalesce(u.first_name, r.first_name),
+        u.last_name = coalesce(u.last_name, r.last_name),
+        u.registration_date = coalesce(u.registration_date, r.registration_date),
+        u.card_status = coalesce(u.card_status, r.card_status),
+        u.preference = coalesce(u.preference, r.preference)
 `, map[string]any{"rows": rows})
 		if err != nil {
 			return err
@@ -487,13 +541,20 @@ func writeProducts(session neo4j.Session, products []NeoProduct, batchSize int) 
 
 		rows := make([]map[string]any, 0, len(batch))
 		for _, p := range batch {
-			rows = append(rows, map[string]any{"id": p.ID, "category": p.Category})
+			rows = append(rows, map[string]any{
+				"id":           p.ID,
+				"category":     p.Category,
+				"base_price":   p.BasePrice,
+				"product_type": p.ProductType,
+			})
 		}
 
 		res, err := session.Run(`
     UNWIND $rows AS r
     MERGE (p:Product {id: r.id})
-    SET p.category = coalesce(p.category, r.category)
+    SET p.category = coalesce(p.category, r.category),
+        p.base_price = coalesce(p.base_price, r.base_price),
+        p.product_type = coalesce(p.product_type, r.product_type)
 `, map[string]any{"rows": rows})
 		if err != nil {
 			return err
@@ -516,7 +577,7 @@ func createPurchasedRelations(session neo4j.Session, interactions []NeoInteracti
 
 		rows := make([]map[string]any, 0, len(batch))
 		for _, it := range batch {
-			rows = append(rows, map[string]any{"uid": it.UID, "pid": it.PID, "ts": it.TS})
+			rows = append(rows, map[string]any{"uid": it.UID, "pid": it.PID, "price": it.Price})
 		}
 
 		// MERGE узлов по id (если нет) — затем MERGE ребро по паре (u,p).
@@ -526,7 +587,7 @@ func createPurchasedRelations(session neo4j.Session, interactions []NeoInteracti
     MERGE (u:User {id: r.uid})
     MERGE (p:Product {id: r.pid})
     MERGE (u)-[rel:PURCHASED]->(p)
-    SET rel.ts = coalesce(rel.ts, r.ts)
+    SET rel.price = coalesce(rel.price, r.price)
     RETURN count(rel) AS rels
 `, map[string]any{"rows": rows})
 		if err != nil {
@@ -594,10 +655,18 @@ func createGroupMemberships(session neo4j.Session, rows []map[string]any, batchS
 	return nil
 }
 
-// Вспомогательная функция для преобразования времени в timestamp в миллисекундах
-func toTimestampMillis(t time.Time) int64 {
-	if t.IsZero() {
-		return time.Now().UnixMilli()
+// Вспомогательные функции
+
+func mathRound(val float64, prec int) float64 {
+	p := mathPow10(prec)
+	return float64(int(val*p+0.5)) / p
+}
+
+// simple int power of 10 for rounding
+func mathPow10(n int) float64 {
+	p := 1.0
+	for i := 0; i < n; i++ {
+		p *= 10.0
 	}
-	return t.UnixMilli()
+	return p
 }
