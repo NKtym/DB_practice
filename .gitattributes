@@ -1,2 +1,4 @@
-*.zip filter=lfs diff=lfs merge=lfs -text
+/gradlew text eol=lf
+*.bat text eol=crlf
+*.jar binary
 docker/exported_volumes.zip filter=lfs diff=lfs merge=lfs -text
