@@ -1,0 +1,167 @@
+1. Сделать не менее 6 запросов на 1 шаг. Фильтрация по связям и свойствам узла.
+
+Найти всех пользователей из группы
+MATCH (u:User)-[:MEMBER_OF]->(g:Group {name: "group_13"})
+RETURN u
+
+Найти все группы пользователя с конкретным id
+MATCH (u:User {id: "00004fd3-2d27-46b6-b112-06f81c0acaf5"})-[:MEMBER_OF]->(g:Group)
+RETURN g
+
+Найти пользователей, купивших продукты определенной категории
+MATCH (u:User)-[:PURCHASED]->(p:Product {category: "cat_1"})
+RETURN DISTINCT u
+
+Найти покупки дороже определенного значения
+MATCH (u:User)-[r:PURCHASED]->(p:Product)
+WHERE r.price > 400
+RETURN u, p, r.price
+
+Найти продукты оперделенного типа, купленные пользователями
+MATCH (u:User)-[:PURCHASED]->(p:Product {product_type: "Retail"})
+RETURN DISTINCT p
+
+Найти пользователей из группы c определенным id, купивших продукты дороже определенного значения
+MATCH (u:User)-[:MEMBER_OF]->(g:Group {id: "043c9f9f-f57e-4016-b515-e1eaeb3461c0"})
+MATCH (u)-[r:PURCHASED]->(p:Product)
+WHERE r.price > 300
+RETURN u, p, r.price
+
+2. Цепочка связей и переменная длина пути. Использовать \[:REL\*2..4] - поиск по цепочке.
+Найти косвенные связи. Минимум один запрос \*. Например, клиенты, связанные через общие покупки. Остановки, связанные через 2 маршрута.
+
+Клиенты купили один и тот же продукт
+MATCH (u1:User)-[:PURCHASED]->(p:Product {id: "067e1ece-e532-4387-bb86-149dfa2b1c1d"})<-[:PURCHASED]-(u2:User)
+WHERE u1 <> u2
+RETURN DISTINCT u1, u2
+
+Цепочка покупок до 4
+MATCH path = (u1:User)-[:PURCHASED*2..4]-(u2:User)
+WHERE u1 <> u2
+RETURN DISTINCT u1, u2, path
+
+3. 5-6 агрегационных запросов (count, collect) сортировка и ограничение (order by, limit)
+
+Топ 5 пользователей по количеству покупок
+MATCH (u:User)-[r:PURCHASED]->(p:Product)
+RETURN u.id AS user,
+       count(r) AS purchases_count
+ORDER BY purchases_count DESC
+LIMIT 5
+
+Количество участников в группах
+MATCH (u:User)-[r:PURCHASED]->(p:Product)
+RETURN p.id AS product_id,
+       p.category AS category,
+       count(r) AS times_purchased
+ORDER BY times_purchased DESC
+LIMIT 5
+
+Топ-5 самых покупаемых продуктов
+MATCH (u:User)-[r:PURCHASED]->(p:Product)
+RETURN p.id AS product_id,
+       p.category AS category,
+       count(r) AS times_purchased
+ORDER BY times_purchased DESC
+LIMIT 5
+
+Пользователи и список купленных ими продуктов
+MATCH (u:User)-[:PURCHASED]->(p:Product)
+RETURN u.id AS user,
+       collect(DISTINCT p.category) AS categories_bought,
+       count(DISTINCT p.category) AS categories_count
+ORDER BY categories_count DESC
+LIMIT 5
+
+Группы и список их участников
+MATCH (u:User)-[:MEMBER_OF]->(g:Group)
+RETURN g.id AS group,
+       collect(u.id) AS members,
+       count(u) AS members_count
+ORDER BY members_count DESC
+LIMIT 3
+
+4. Найти сценарии Postgres/Mongo c join/lookup и переписать на Cypher используя Match. Описать, какой и запросов проще/нагляднее
+
+findTop10ClientsByRevenue - Топ-10 клиентов по выручке
+MATCH (u:User)-[r:PURCHASED]->(p:Product)
+RETURN u.id AS client_id,
+       u.name AS client_name,
+       SUM(r.price) AS total_spent,
+       COUNT(r) AS tx_count,
+       MAX(r.ts) AS last_transaction
+ORDER BY total_spent DESC
+LIMIT 10
+
+findTop10ProductsByRevenue - Топ-10 продуктов по выручке
+MATCH (u:User)-[r:PURCHASED]->(p:Product)
+RETURN p.id AS product_id,
+       p.product_type AS product_name,
+       COUNT(r) AS sales_count,
+       SUM(r.price) AS revenue
+ORDER BY revenue DESC
+LIMIT 10
+
+В графовой модели Neo4j связь PURCHASED напрямую соединяет User и Product, поэтому вместо JOIN используется MATCH по отношению.
+Запрос в Cypher более нагляден, так как отражает естественную структуру предметной области — пользователь покупает продукт.
+
+5. Поиск общих соседей и сортировка по количеству общих связей
+
+Пользователи с наибольшим количеством общих покупок
+MATCH (u1:User)-[:PURCHASED]->(p:Product)<-[:PURCHASED]-(u2:User)
+WHERE u1.id < u2.id
+WITH u1, u2, count(DISTINCT p) AS common_products
+RETURN u1.id AS user1,
+       u2.id AS user2,
+       common_products
+ORDER BY common_products DESC
+LIMIT 5
+
+6. Реализовать запрос, объединяющий цепочки, агрегации, фильтрацию.
+
+MATCH path = (u1:User)-[:MEMBER_OF]->(g:Group)<-[:MEMBER_OF]-(u2:User)
+WHERE u1.id < u2.id
+MATCH (u1)-[r1:PURCHASED]->(p:Product)<-[r2:PURCHASED]-(u2)
+WITH u1, u2,
+     count(DISTINCT p) AS common_products,
+     sum(r1.price) AS total_spent_u1,
+     sum(r2.price) AS total_spent_u2,
+     collect(DISTINCT p.id) AS shared_products
+WHERE common_products >= 2
+  AND total_spent_u1 > 1000
+  AND total_spent_u2 > 1000
+RETURN u1.name AS user1,
+       u2.name AS user2,
+       common_products,
+       total_spent_u1,
+       total_spent_u2,
+       shared_products
+ORDER BY common_products DESC
+LIMIT 5
+
+7.
+Лучше
+Глубокие трассировки связей - Друзья друзей друзей в соцсетях, цепочки рекомендаций
+Так как JOIN дорогие а траверс графа выполняется быстрее
+
+Моделирование сложных доменов с множеством связей - Knowledge graphs, сети поставок
+Так как связи — объекты первого класса, нет необходимости в нормализации/денормализации
+
+Динамические запросы по связям переменной глубины - Анализ влияния (кто влияет на кого в сети), маршрутизация
+Cypher позволяет писать запросы с переменной длиной пути (*-1..5->) без рекурсивных CTE или агрегаций
+
+Хуже
+Простые CRUD-операции на больших объёмах данных без сложных связей
+Графовая модель добавляет накладные расходы на индексацию связей; запись одной сущности может затрагивать много индексов
+
+Горизонтальное масштабирование записи
+В Neo4j Cluster запись идёт через лидер, что ограничивает пропускную способность по сравнению с шардированием MongoDB
+
+Работа с большими бинарными объектами/файлами
+
+
+В нашем проекте Neo4j логично использовать для анализа взаимосвязей между пользователями, продуктами и группами.
+Поскольку покупки и членство в группах являются отношениями, графовая модель естественно отражает предметную область.
+Neo4j особенно оправдан для поиска косвенных связей, построения рекомендаций и анализа схожести клиентов,
+где в реляционной БД потребовались бы сложные JOIN и рекурсивные запросы.
+При этом для агрегатной аналитики целесообразно использовать Postgres.
