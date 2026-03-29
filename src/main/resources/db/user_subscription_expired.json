@@ -1,0 +1,13 @@
+{
+  "eventId": "evt_12345",
+  "eventType": "USER_SUBSCRIPTION_EXPIRED",
+  "entityId": "sub_987654321",
+  "timestamp": 1711296000000,
+  "source": "subscription-service",
+  "payload": {
+    "userId": "user_12345",
+    "subscriptionId": "sub_987654321",
+    "expiredAt": "2024-03-24T00:00:00Z"
+  },
+  "version": 1
+}

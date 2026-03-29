@@ -1,0 +1,15 @@
+{
+  "eventId": "evt_09876",
+  "eventType": "VISIT_ENDED",
+  "entityId": "sub_987654321",
+  "timestamp": 1711296000000,
+  "source": "access-control-service",
+  "payload": {
+    "userId": "user_12345",
+    "subscriptionId": "sub_987654321",
+    "visitId": "visit_20240324_001",
+    "time": "2024-03-24T09:18:30Z",
+    "slot_id": "slot_12345"
+  },
+  "version": 1
+}

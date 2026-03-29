@@ -241,7 +241,7 @@ services:
       KAFKA_BROKER_ID: 1
       KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
     volumes:
-      - kafka1-data:/var/lib/kafka/data
+      - ./data/kafka/instance1:/var/lib/kafka/data
     depends_on:
       - zoo1
       - zoo2
@@ -261,7 +261,7 @@ services:
       KAFKA_BROKER_ID: 2
       KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
     volumes:
-      - kafka2-data:/var/lib/kafka/data
+      - ./data/kafka/instance2:/var/lib/kafka/data
     depends_on:
       - zoo1
       - zoo2
@@ -281,7 +281,7 @@ services:
       KAFKA_BROKER_ID: 3
       KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
     volumes:
-      - kafka3-data:/var/lib/kafka/data
+      - ./data/kafka/instance3:/var/lib/kafka/data
     depends_on:
       - zoo1
       - zoo2
