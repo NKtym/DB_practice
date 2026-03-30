@@ -60,7 +60,7 @@ services:
     command:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.ignored-mount-points="^/(sys|proc|dev|host|etc)($|/)"'
+      - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
     restart: unless-stopped
 
   cadvisor:
@@ -150,7 +150,7 @@ services:
     entrypoint: >
       sh -c "
       echo 'Starting FULL MongoDB backup with oplog...' &&
-      mongodump --uri='mongodb://mongo2:27017/?replicaSet=rs0' --oplog --out=/backup/$(date +%Y-%m-%d_%H-%M-%S) &&
+      mongodump --uri='mongodb://mongo2:27017/?replicaSet=rs0' --oplog --out=/backup/$$(date +%Y-%m-%d_%H-%M-%S) &&
       echo 'Backup finished'
       "
 
