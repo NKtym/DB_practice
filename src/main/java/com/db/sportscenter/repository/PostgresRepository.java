@@ -76,7 +76,7 @@ public class PostgresRepository {
            ORDER BY pc.product_id, pc.day;
            """;
 
-        RowMapper<DailyProductRevenue> rowMapper = (rs, _) -> {
+        RowMapper<DailyProductRevenue> rowMapper = (rs, rowNum) -> {
             UUID productId = rs.getObject("product_id", UUID.class);
             LocalDate day = rs.getDate("day").toLocalDate();
             Long dayRevenue = rs.getLong("day_revenue");
