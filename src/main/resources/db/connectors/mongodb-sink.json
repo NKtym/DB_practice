@@ -1,0 +1,13 @@
+{
+  "name": "mongodb-sink",
+  "config": {
+    "connector.class": "com.mongodb.kafka.connect.MongoSinkConnector",
+    "tasks.max": "1",
+    "topics": "postgres-clients,postgres-products,postgres-transactions",
+    "connection.uri": "mongodb://mongo:27017",
+    "database": "sports_center_analytics",
+    "collection": "${topic}",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter"
+  }
+}
