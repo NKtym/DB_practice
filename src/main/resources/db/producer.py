@@ -38,7 +38,6 @@ def build_subscription_event(event_type):
 
     if event_type == "USER_SUBSCRIPTION_EXPIRED":
         payload["expiredAt"] = iso_now()
-
     elif event_type == "USER_SUBSCRIPTION_RENEWED":
         payload["renewedAt"] = iso_now()
 
@@ -78,7 +77,6 @@ def build_visit_event(event_type):
 
 def build_message():
     event_type = random.choice(EVENT_TYPES)
-
     if event_type in ["USER_SUBSCRIPTION_EXPIRED", "USER_SUBSCRIPTION_RENEWED"]:
         return build_subscription_event(event_type)
     else:
@@ -86,7 +84,6 @@ def build_message():
 
 def send_to_kafka(message):
     json_message = json.dumps(message)
-
     key = message["entityId"]
 
     cmd = [
@@ -107,20 +104,24 @@ def send_to_kafka(message):
     )
 
     kafka_input = f"{key}:{json_message}\n"
-
     stdout, stderr = process.communicate(kafka_input)
 
     if process.returncode == 0:
-        print(f"✅ Sent with key={key}: {json_message}")
+        print(f"✅ Sent to {TOPIC} | key={key} | eventType={message['eventType']}")
     else:
-        print("❌ Error sending message:")
-        print(stderr)
+        print(f"❌ Error sending message: {stderr}")
 
 if __name__ == "__main__":
+    print("🚀 Producer запущен. Отправляем сообщения в основной топик 'simple'")
     count = 0
-    while True:
-        msg = build_message()
-        send_to_kafka(msg)
-        count+=1
-        if (count >= 10):
-            break
+    try:
+        while True:
+            msg = build_message()
+            send_to_kafka(msg)
+            count += 1
+            if count >= 10:
+                print("✅ Отправлено 10 сообщений. Завершаем.")
+                break
+            time.sleep(0.5)  # небольшая пауза между сообщениями
+    except KeyboardInterrupt:
+        print("\n👋 Producer остановлен")

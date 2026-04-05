@@ -1,61 +1,92 @@
 import json
 from confluent_kafka import Consumer, Producer, KafkaError
-from confluent_kafka.admin import AdminClient, NewTopic
 import time
-import sys
+import random  # для симуляции ошибок
 
 # ================== КОНФИГУРАЦИЯ ==================
-BOOTSTRAP_SERVERS = "localhost:9092"          # внешний listener из docker-compose
+BOOTSTRAP_SERVERS = "localhost:9092"
 GROUP_ID = "simple-consumer-group-with-retry"
+
 MAIN_TOPIC = "simple"
 RETRY_TOPICS = ["FirstError", "SecondError"]
 DLQ_TOPIC = "DLQ"
-MAX_RETRIES = 3                               # после 3-го падения → DLQ
+MAX_RETRIES = 3
 
-TOPICS_TO_SUBSCRIBE = [MAIN_TOPIC] + RETRY_TOPICS
+ALL_TOPICS = [MAIN_TOPIC] + RETRY_TOPICS
 
-# Настройки producer (для отправки в error-топики)
+# ================== PRODUCER (для ретраев и DLQ) ==================
 producer_conf = {
     'bootstrap.servers': BOOTSTRAP_SERVERS,
-    'client.id': 'retry-producer'
+    'client.id': 'retry-producer',
+    'acks': 'all',
+    'retries': 5,
 }
+
 producer = Producer(producer_conf)
 
 
 def delivery_report(err, msg):
     if err is not None:
-        print(f"Delivery failed: {err}")
+        print(f"❌ Delivery failed to {msg.topic()}: {err}")
     else:
-        print(f"Message delivered to {msg.topic()} [{msg.partition()}]")
+        retry = get_retry_count(msg.headers())
+        print(f"✅ Sent to {msg.topic()} [retry={retry}]")
 
-# ================== ОСНОВНАЯ ЛОГИКА ==================
+
+# ================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
 def get_retry_count(headers):
-    """Извлекаем retry-count из headers"""
+    """Надёжно извлекает retry-count независимо от типа (str / bytes)"""
     if not headers:
         return 0
     for key, value in headers:
+        # Приводим ключ к строке
+        if isinstance(key, bytes):
+            key = key.decode('utf-8', errors='ignore')
         if key == "retry-count":
-            return int(value.decode('utf-8'))
+            # Приводим значение к строке и в int
+            if isinstance(value, bytes):
+                value = value.decode('utf-8', errors='ignore')
+            try:
+                return int(value)
+            except:
+                return 0
     return 0
+
 
 def add_retry_header(headers, new_count):
     """Добавляем/обновляем заголовок retry-count"""
     if headers is None:
         headers = []
-    # Удаляем старый, если есть
-    headers = [h for h in headers if h[0] != "retry-count"]
+    # Удаляем старый заголовок (на всякий случай)
+    headers = [h for h in headers if h[0] not in (b"retry-count", "retry-count")]
     headers.append(("retry-count", str(new_count).encode('utf-8')))
     return headers
 
+
 def process_message(msg):
-    """←←← ТВОЯ РЕАЛЬНАЯ ОБРАБОТКА ЗДЕСЬ ←←←"""
-    print(f"Processing message from {msg.topic()} | key={msg.key()} | retry={get_retry_count(msg.headers())}")
+    """Твоя бизнес-логика здесь"""
+    current_retry = get_retry_count(msg.headers())
+    print(f"Processing from {msg.topic()} | key={msg.key()} | retry={current_retry}")
 
-    data = json.loads(msg.value().decode('utf-8'))
-    raise Exception("Test error - simulating failure")
+    try:
+        data = json.loads(msg.value().decode('utf-8'))
+        event_type = data.get("eventType", "UNKNOWN")
 
-    print("✅ Успешно обработано")
-    return True
+        # === Здесь пиши свою реальную обработку ===
+        # if event_type == "USER_SUBSCRIPTION_EXPIRED":
+        #     ...
+
+        # Симуляция ошибок для теста (убери или уменьши процент в продакшене)
+        if random.random() < 0.5:   # 50% шанс ошибки
+            raise Exception(f"Simulated failure for eventType={event_type}")
+
+        print(f"✅ Успешно обработано: {event_type} (retry={current_retry})")
+        return True
+
+    except Exception as e:
+        print(f"❌ Ошибка обработки: {e}")
+        raise
+
 
 def send_to_next_topic(msg, current_retry):
     next_retry = current_retry + 1
@@ -63,13 +94,13 @@ def send_to_next_topic(msg, current_retry):
 
     if next_retry >= MAX_RETRIES:
         target_topic = DLQ_TOPIC
-        print(f"🚨 {current_retry+1}-й ретрай провалился → отправляем в DLQ")
+        print(f"🚨 Достигнуто максимальное количество ретраев ({MAX_RETRIES}) → DLQ")
     elif next_retry == 1:
         target_topic = "FirstError"
         print(f"⚠️ 1-й ретрай → FirstError")
     else:
         target_topic = "SecondError"
-        print(f"⚠️ 2-й ретрай → SecondError")
+        print(f"⚠️ {next_retry}-й ретрай → SecondError")
 
     producer.produce(
         topic=target_topic,
@@ -78,21 +109,23 @@ def send_to_next_topic(msg, current_retry):
         headers=headers,
         callback=delivery_report
     )
-    producer.flush()
+    producer.flush(timeout=5.0)
+
 
 # ================== CONSUMER ==================
 consumer_conf = {
     'bootstrap.servers': BOOTSTRAP_SERVERS,
     'group.id': GROUP_ID,
     'auto.offset.reset': 'earliest',
-    'enable.auto.commit': False,      # ручной коммит
-    'max.poll.interval.ms': 300000,   # 5 минут
+    'enable.auto.commit': False,
+    'max.poll.interval.ms': 300000,
 }
 
 consumer = Consumer(consumer_conf)
-consumer.subscribe(TOPICS_TO_SUBSCRIBE)
+consumer.subscribe(ALL_TOPICS)
 
-print(f"🚀 Consumer запущен. Подписан на: {TOPICS_TO_SUBSCRIBE}")
+print(f"🚀 Consumer запущен. Подписан на: {ALL_TOPICS}")
+print(f"   MAX_RETRIES = {MAX_RETRIES} → DLQ: {DLQ_TOPIC}\n")
 
 try:
     while True:
@@ -109,16 +142,16 @@ try:
         try:
             success = process_message(msg)
             if success:
-                consumer.commit(msg)          # успех → коммитим
-                continue
-        except Exception as e:
-            print(f"❌ Ошибка обработки: {e}")
+                consumer.commit(asynchronous=False)
+        except Exception:
+            # Ошибка → отправляем в следующий ретрай-топик / DLQ
             current_retry = get_retry_count(msg.headers())
             send_to_next_topic(msg, current_retry)
-            consumer.commit(msg)              # в любом случае коммитим оригинал
+            consumer.commit(asynchronous=False)   # коммитим в любом случае
 
 except KeyboardInterrupt:
-    print("👋 Остановка consumer")
+    print("\n👋 Consumer остановлен пользователем")
 finally:
     consumer.close()
     producer.flush()
+    print("Consumer и Producer закрыты")
