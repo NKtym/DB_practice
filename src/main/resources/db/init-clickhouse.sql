@@ -98,3 +98,34 @@ VALUES
     'card',
     '{}'
 );
+
+CREATE TABLE IF NOT EXISTS analytics_events_daily_agg
+(
+    event_date Date,
+    event_type LowCardinality(String),
+    entity_type LowCardinality(String),
+
+    events_state AggregateFunction(count),
+    revenue_state AggregateFunction(sum, Decimal(12, 2)),
+    unique_clients_state AggregateFunction(uniqExact, UInt64)
+)
+ENGINE = AggregatingMergeTree
+PARTITION BY toYYYYMM(event_date)
+ORDER BY (event_date, event_type, entity_type);
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS analytics_events_daily_agg_mv
+TO analytics_events_daily_agg
+AS
+SELECT
+    event_date,
+    event_type,
+    entity_type,
+    countState() AS events_state,
+    sumState(amount) AS revenue_state,
+    uniqExactState(coalesce(client_id, 0)) AS unique_clients_state
+FROM analytics_events
+GROUP BY
+    event_date,
+    event_type,
+    entity_type;
+

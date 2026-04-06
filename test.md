@@ -183,3 +183,21 @@ WHERE employee_id IS NOT NULL
 GROUP BY employee_id
 ORDER BY events DESC
 LIMIT 10;
+
+5)
+SELECT
+    event_date,
+    event_type,
+    entity_type,
+    countMerge(events_state) AS events,
+    round(sumMerge(revenue_state), 2) AS revenue,
+    uniqExactMerge(unique_clients_state) AS unique_clients
+FROM analytics_events_daily_agg
+WHERE event_date >= today() - INTERVAL 30 DAY
+GROUP BY
+    event_date,
+    event_type,
+    entity_type
+ORDER BY event_date DESC, events DESC;
+
+6)
