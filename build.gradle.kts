@@ -32,6 +32,7 @@ dependencies {
     runtimeOnly("org.postgresql:postgresql")
     implementation("org.springframework.boot:spring-boot-starter-data-mongodb")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.5.0")
+    implementation("com.clickhouse:clickhouse-jdbc:0.4.6")
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
