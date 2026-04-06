@@ -109,3 +109,77 @@ FROM analytics_events;
 SELECT
     countDistinct(toStartOfWeek(event_time)) AS weeks_count
 FROM analytics_events;
+
+4)
+Количество событий по дням - общая динамика нагрузки по дням
+SELECT
+    event_date,
+    count() AS events
+FROM analytics_events
+WHERE event_time >= now() - INTERVAL 30 DAY
+GROUP BY event_date
+ORDER BY event_date;
+
+Уникальные клиенты по дням - оценка дневного охвата пользователей
+SELECT
+    event_date,
+    uniqExact(client_id) AS unique_clients
+FROM analytics_events
+WHERE client_id IS NOT NULL
+GROUP BY event_date
+ORDER BY event_date;
+
+Сумма выручки по дням - динамика выручки
+SELECT
+    event_date,
+    sum(amount) AS revenue
+FROM analytics_events
+WHERE amount > 0
+GROUP BY event_date
+ORDER BY event_date;
+
+Активность по часам - часы пиковой нагрузки
+SELECT
+    toHour(event_time) AS hour,
+    count() AS events
+FROM analytics_events
+WHERE event_time >= now() - INTERVAL 7 DAY
+GROUP BY hour
+ORDER BY hour;
+
+Количество событий по типам - типы событий которые встречаются чаще всего
+SELECT
+    event_type,
+    count() AS events
+FROM analytics_events
+GROUP BY event_type
+ORDER BY events DESC;
+
+Средний чек по типам событий - средняя денежная ценность разных сценарие
+SELECT
+    event_type,
+    round(avg(amount), 2) AS avg_amount
+FROM analytics_events
+WHERE amount > 0
+GROUP BY event_type
+ORDER BY avg_amount DESC;
+
+Топ клиентов по активности - самые активные пользователи
+SELECT
+    client_id,
+    count() AS events
+FROM analytics_events
+WHERE client_id IS NOT NULL
+GROUP BY client_id
+ORDER BY events DESC
+LIMIT 5;
+
+Активность сотрудников - нагрузка на сотрудников
+SELECT
+    employee_id,
+    count() AS events
+FROM analytics_events
+WHERE employee_id IS NOT NULL
+GROUP BY employee_id
+ORDER BY events DESC
+LIMIT 10;
