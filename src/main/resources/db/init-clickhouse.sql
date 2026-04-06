@@ -42,3 +42,59 @@ SELECT
 FROM events
 WHERE event_type = 'USER_SUBSCRIPTION_RENEWED'
 GROUP BY date;
+
+CREATE TABLE IF NOT EXISTS analytics_events
+(
+    event_id UUID,
+
+    event_time DateTime64(3),
+    event_date Date MATERIALIZED toDate(event_time),
+
+    event_type LowCardinality(String),
+
+    entity_type LowCardinality(String),
+    entity_id UInt64,
+
+    client_id Nullable(UInt64),
+    employee_id Nullable(UInt64),
+    product_id Nullable(UInt64),
+    slot_id Nullable(UInt64),
+    zone_id Nullable(UInt64),
+    transaction_id Nullable(UInt64),
+
+    amount Decimal(12, 2) DEFAULT 0,
+    quantity UInt32 DEFAULT 1,
+    payment_type Nullable(String),
+
+    source String DEFAULT 'sport_center',
+    created_at DateTime DEFAULT now(),
+    metadata String
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(event_time)
+ORDER BY (event_time, event_type, entity_type, entity_id);
+
+INSERT INTO analytics_events
+(
+    event_id,
+    event_time,
+    event_type,
+    entity_type,
+    entity_id,
+    client_id,
+    amount,
+    payment_type,
+    metadata
+)
+VALUES
+(
+    generateUUIDv4(),
+    now(),
+    'transaction_created',
+    'transaction',
+    1,
+    10,
+    1500.00,
+    'card',
+    '{}'
+);
