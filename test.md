@@ -73,3 +73,39 @@ FROM system.parts
 WHERE table = 'analytics_events'
   AND active = 1
 GROUP BY partition;
+
+3)
+SELECT count() FROM analytics_events;
+
+SELECT
+    entity_id,
+    count() AS cnt
+FROM analytics_events
+GROUP BY entity_id
+HAVING cnt > 1
+ORDER BY cnt DESC
+LIMIT 20;
+
+SELECT
+    toStartOfHour(event_time) AS hour,
+    count() AS rows
+FROM analytics_events
+GROUP BY hour
+ORDER BY hour;
+
+SELECT
+    event_date,
+    count() AS rows
+FROM analytics_events
+GROUP BY event_date
+ORDER BY event_date;
+
+SELECT
+    countDistinct(event_date) AS days_count,
+    min(event_date) AS first_day,
+    max(event_date) AS last_day
+FROM analytics_events;
+
+SELECT
+    countDistinct(toStartOfWeek(event_time)) AS weeks_count
+FROM analytics_events;
