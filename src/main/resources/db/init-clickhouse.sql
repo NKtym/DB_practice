@@ -129,3 +129,17 @@ GROUP BY
     event_type,
     entity_type;
 
+ALTER TABLE events
+    MODIFY TTL event_time + INTERVAL 30 DAY DELETE;
+
+ALTER TABLE analytics_events
+    MODIFY TTL event_time + INTERVAL 30 DAY DELETE;
+
+ALTER TABLE visits_daily
+    MODIFY TTL date + INTERVAL 3 YEAR DELETE;
+
+ALTER TABLE subscriptions_stats
+    MODIFY TTL date + INTERVAL 3 YEAR DELETE;
+
+ALTER TABLE analytics_events_daily_agg
+    MODIFY TTL event_date + INTERVAL 3 YEAR DELETE;

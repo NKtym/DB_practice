@@ -213,3 +213,12 @@ SELECT event_id, count()
 FROM analytics_events FINAL
 GROUP BY event_id
 HAVING count() > 1;
+
+7)
+SHOW CREATE TABLE events;
+SHOW CREATE TABLE analytics_events;
+SHOW CREATE TABLE analytics_events_daily_agg;
+SHOW CREATE TABLE subscriptions_stats;
+SHOW CREATE TABLE visits_daily;
+
+8)
