@@ -201,3 +201,15 @@ GROUP BY
 ORDER BY event_date DESC, events DESC;
 
 6)
+SELECT event_id, count()
+FROM analytics_events_dedup
+GROUP BY event_id
+HAVING count() > 1;
+
+RENAME TABLE analytics_events TO analytics_events_raw,
+             analytics_events_dedup TO analytics_events;
+
+SELECT event_id, count()
+FROM analytics_events FINAL
+GROUP BY event_id
+HAVING count() > 1;
