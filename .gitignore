@@ -38,3 +38,12 @@ out/
 .vscode/
 
 re
+
+# Database data
+src/main/resources/db/data/
+
+# Environment files
+.env
+
+# IDE
+.idea/

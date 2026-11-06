@@ -1,0 +1,142 @@
+INSERT INTO public.employees (employee_id, first_name, last_name, login, password, role, salary_rate, hire_date)
+SELECT gen_random_uuid(), 'emp' || i, 'surname' || i, 'emp' || i, 'pass' || i,
+       (ARRAY['ADMIN','TRAINER','MANAGER','ACCOUNTANT','JANITOR']::public.role[])[ (i % 5) + 1 ],
+       30000 + (i % 10) * 1000,
+       current_date - (i % 365)
+FROM generate_series(1,100) AS s(i);
+
+-- Products (500)
+INSERT INTO public.products (product_id, base_price, product_type, category)
+SELECT gen_random_uuid(), (100 + (i % 50) * 10)::integer,
+       CASE WHEN (i % 3)=0 THEN 'Subscription' WHEN (i % 3)=1 THEN 'Service' ELSE 'Retail' END,
+       'cat_' || (i % 8)
+FROM generate_series(1,500) AS s(i);
+
+-- Zones (50)
+INSERT INTO public.zones (zone_id, type, status)
+SELECT gen_random_uuid(), 'zone_' || i, (ARRAY['FREE','OCCUPIED']::zone_status[])[(i % 2) + 1]
+FROM generate_series(1,50) AS s(i);
+
+-- Groups (1000)
+INSERT INTO public.groups (group_id, name, trainer_id)
+SELECT gen_random_uuid(), 'group_' || i,
+       (SELECT employee_id FROM public.employees ORDER BY random() LIMIT 1)
+FROM generate_series(1,1000) AS s(i);
+
+-- Slots (2000)
+INSERT INTO public.slots (slot_id, start_datatime, end_datatime, zone_id, current_capacity, max_capacity, group_id, status)
+SELECT gen_random_uuid(),
+       current_date - (i % 30),
+       current_date + ((i % 10) + 1),
+       (SELECT zone_id FROM public.zones ORDER BY (i % 50) LIMIT 1),
+       (5 + (i % 20))::integer,
+       30,
+       (SELECT group_id FROM public.groups ORDER BY (i % 1000) LIMIT 1),
+       (ARRAY['PLANNED','CANCELLED','DONE']::slot_status[])[(i % 3) + 1]
+FROM generate_series(1,2000) AS s(i);
+
+
+--1
+WITH ins AS (
+  INSERT INTO public.clients (
+    client_id, first_name, last_name, phone, registration_date, card_status, preference, emerhency_contact
+  )
+  SELECT
+    gen_random_uuid(),
+    'Name_' || gs,
+    'Surname_' || gs,
+    '+700' || lpad((1000000 + gs)::text,7,'0'),
+    (current_date - (gs % 365))::date,
+    'ACTIVE',
+    CASE WHEN (gs % 3) = 0 THEN 'yoga' WHEN (gs % 3) = 1 THEN 'swimming' ELSE 'boxing' END,
+	CASE WHEN (gs % 2) = 0 THEN '+7' || lpad((9000000 + gs)::text,7,'0') ELSE NULL END
+  FROM generate_series(1,3000000) AS gs
+  RETURNING client_id
+)
+SELECT client_id, row_number() OVER (ORDER BY client_id) AS rn
+INTO TEMP TABLE tmp_clients_ids
+FROM ins
+;
+
+-- Индекс для быстрого поиска по rn
+CREATE INDEX idx_tmp_clients_ids_rn ON tmp_clients_ids (rn);
+
+-- Проверка: количество
+SELECT (SELECT count(*) FROM tmp_clients_ids) AS tmp_clients_count;
+
+--2
+
+CREATE TEMP TABLE tmp_products AS
+SELECT product_id, row_number() OVER (ORDER BY product_id) AS prn FROM public.products;
+
+CREATE TEMP TABLE tmp_employees AS
+SELECT employee_id, row_number() OVER (ORDER BY employee_id) AS ern FROM public.employees;
+
+CREATE TEMP TABLE tmp_slots AS
+SELECT slot_id, row_number() OVER (ORDER BY slot_id) AS srn FROM public.slots;
+
+CREATE TEMP TABLE tmp_groups AS
+SELECT group_id, row_number() OVER (ORDER BY group_id) AS grn FROM public.groups;
+
+-- статистика размеров
+SELECT (SELECT max(prn) FROM tmp_products) AS products_count,
+       (SELECT max(ern) FROM tmp_employees) AS employees_count,
+       (SELECT max(srn) FROM tmp_slots) AS slots_count,
+       (SELECT max(grn) FROM tmp_groups) AS groups_count;
+
+--3
+SET LOCAL synchronous_commit = OFF;
+SET LOCAL statement_timeout = 0;
+
+WITH cnt AS (SELECT MAX(rn) AS max_rn FROM tmp_clients_ids),
+     pcnt AS (SELECT COALESCE(MAX(prn),1) AS pcount FROM tmp_products),
+     ecount AS (SELECT COALESCE(MAX(ern),1) AS ecount FROM tmp_employees),
+ins_tx AS (
+  INSERT INTO public.transactions (transaction_id, datatime, total_amount, employee_id, payment_type, client_id, product_id)
+  SELECT
+    gen_random_uuid(),
+    current_date - (gs % 30),
+    (100 + (gs % 5000))::integer,
+    -- выбираем employee по индексу: ((gs-1) % ecount) + 1
+    (SELECT employee_id FROM tmp_employees WHERE ern = ((gs - 1) % (SELECT ecount FROM ecount)) + 1),
+    (ARRAY['CASH','CARD']::payment_type[])[(gs % 2) + 1],
+    -- client_id через tmp_clients_ids
+    (SELECT client_id FROM tmp_clients_ids WHERE rn = ((gs - 1) % (SELECT max_rn FROM cnt)) + 1),
+    -- product_id через tmp_products
+    (SELECT product_id FROM tmp_products WHERE prn = ((gs - 1) % (SELECT pcount FROM pcnt)) + 1)
+  FROM generate_series(1,3000000) AS gs
+  RETURNING transaction_id, client_id
+)
+SELECT transaction_id, client_id
+INTO TEMP TABLE tmp_transactions_new
+FROM ins_tx
+;
+
+CREATE INDEX idx_tmp_transactions_client_new ON tmp_transactions_new (client_id);
+
+SELECT count(*) AS tx_count FROM tmp_transactions_new
+
+--4
+WITH cnt AS (SELECT MAX(rn) AS max_rn FROM tmp_clients_ids),
+subs_ins AS (
+  INSERT INTO public.subscriptions (subscription_id, sale_date, activation_date, total_price, terms, client_id, transaction_id)
+  SELECT
+    gen_random_uuid(),
+    current_date - (gs % 90),
+    current_date - ((gs % 60) - 5),
+    (1000 + (gs % 5000))::integer,
+    (ARRAY['monthly','annual','family'])[(gs % 3) + 1],
+    (SELECT client_id FROM tmp_clients_ids WHERE rn = ((gs - 1) % (SELECT max_rn FROM cnt)) + 1),
+    -- берем любую транзакцию этого клиента (LIMIT 1)
+    (SELECT transaction_id FROM tmp_transactions_new tt WHERE tt.client_id = (SELECT client_id FROM tmp_clients_ids WHERE rn = ((gs - 1) % (SELECT max_rn FROM cnt)) + 1) LIMIT 1)
+  FROM generate_series(1,3000000) AS gs
+  RETURNING subscription_id, client_id
+)
+SELECT subscription_id, client_id
+INTO TEMP TABLE tmp_subscriptions
+FROM subs_ins
+;
+
+CREATE INDEX idx_tmp_subs_client ON tmp_subscriptions (client_id);
+SELECT count(*) AS subs_count FROM tmp_subscriptions;
+

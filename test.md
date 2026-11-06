@@ -220,5 +220,3 @@ SHOW CREATE TABLE analytics_events;
 SHOW CREATE TABLE analytics_events_daily_agg;
 SHOW CREATE TABLE subscriptions_stats;
 SHOW CREATE TABLE visits_daily;
-
-8)
