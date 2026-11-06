@@ -47,3 +47,5 @@ src/main/resources/db/data/
 
 # IDE
 .idea/
+
+docker/exported_volumes.zip
